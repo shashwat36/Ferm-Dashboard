@@ -1,0 +1,317 @@
+---
+title: "Fermentation Database"
+runtime: shiny
+output: html_document
+header-includes:
+    - \usepackage{fancyhdr}
+    - \usepackage{color}
+    - \usepackage[margin=1in ]{geometry}
+fig_caption: true
+---
+\addtolength{\headheight}{1.0cm} 
+\setlength\headheight{28pt}
+\pagestyle{fancyplain} 
+\rhead{\includegraphics[height=1.2cm]{~/Desktop/mm.png}}
+\renewcommand{\headrulewidth}{0pt} 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Biomass yield:
+Please use the slider to select a date range:
+
+```{r eruptions, echo=FALSE, warning=FALSE, comment=FALSE, message= FALSE,fig.align='center',out.extra='angle=0'}
+
+sliderInput("date",
+                  "Fermentation range",
+                  min = as.Date("2017-10-17","%Y-%m-%d"),
+                  max = as.Date("2018-01-30","%Y-%m-%d"),
+                  value=as.Date(c("2017-10-17","2018-01-30")),timeFormat="%Y-%m-%d")
+    
+
+library(data.table)
+library(readxl)
+library(reshape)
+library(ggplot2)
+library(ggpmisc)
+run<- "PB180123"
+fdb<-as.data.frame(read_excel("~/Dropbox (Modern Meadow)/Modern Meadow TEAM/LEATHER/Process Development/Upstream/2017 Fermentation/Ferm data analysis/Incyght/inCyght upload folder/inCyght offline .xlsx"))
+colnames(fdb)[c(40,42)]<- c("Pre-Col (g/L)", "Pop-Col (g/L)")
+fdb$cond<- ifelse(fdb$`Run name` != run , "Past weeks", "Current week")
+fdb$date<- as.Date(substr(fdb$`Run name`,3,100), format = "%y%m%d")
+pb<- subset(fdb, fdb$`Run name` == run)
+rownames(pb)<- 1:nrow(pb)
+pb[c(36:42),28] <-pb[c(29:35),28]
+group<- list(a = c("SU1", "SU2"), b = c("SU3", "SU4"), c = c("SU5", "SU6"))
+conditions<-c("Control", "SU3,4", "SU5,6")
+su<-list()
+stoc<- list()
+kin<- list()
+titer<- list()
+
+for (i in 1: length(group)) {
+  tmp<-list()
+  for (j in 1:length(group[[i]])) {
+    tmp[[j]]<- subset(pb, pb$Ferm == group[[i]][j])
+  }
+  su[[i]]<-as.data.frame(do.call(rbind,tmp))
+  colnames(su[[i]])[5]<- "time"
+  stoc[[i]]<- as.data.frame(su[[i]][,c(5,7,36,11,12,27:33)])
+  stoc[[i]]$RQ<- stoc[[i]][,6]*32/stoc[[i]][,7]/44
+  kin[[i]]<- as.data.frame(su[[i]][,c(5,39,17)])
+  kin[[i]]$`sp. Gly uptake (g/g/hr)`<-as.numeric(kin[[i]]$`sp. Gly uptake (g/g/hr)`)
+
+}
+
+for (i in 1:2) {
+    
+  titer[[i]]<- as.data.frame(subset(su[[i]],su[[i]]$time>62)[,c(4,40,41,42,43)])
+  titer[[i]]<- titer[[i]][!is.na(titer[[i]][,3]),]
+  titer[[i]]<-as.data.frame(cbind(melt(titer[[i]][,c(1,2,4)]),melt(titer[[i]][,c(1,3,5)])$value) )
+  colnames(titer[[i]])[4]<-"sd"
+  
+}
+
+
+renderPlot({
+  yield<-subset(fdb, fdb$`EFT (hrs)`>  62)[,c(3,4,32,62,63)]; colnames(yield)[1]<- "run"
+yield$runid<- paste(yield$run, yield$Ferm)
+yield<- subset(yield,date >= as.Date(input$date[1], format = "%Y-%m-%d" ))
+yield<- subset(yield,date <= as.Date(input$date[2], format = "%Y-%m-%d" ))
+ggplot(yield, aes(run, yield$`Yx/C`))+
+  geom_col(aes(fill= factor(Ferm), group = factor(Ferm)), position = "dodge")+
+  xlab("")+ylab("Y X/C")+
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(angle = 90, size = 15),
+        axis.text.y = element_text( size = 15),
+        axis.title = element_text(size =15))
+})
+
+
+```
+
+## Collagen titer:
+Please use the slider to select a date range:
+```{r , echo=FALSE, warning=FALSE, comment=FALSE, message= FALSE,fig.align='center',out.extra='angle=0'}
+
+sliderInput("date1",
+                  "Fermentation range",
+                  min = as.Date("2017-10-17","%Y-%m-%d"),
+                  max = as.Date("2018-01-30","%Y-%m-%d"),
+                  value=as.Date(c("2017-10-17","2018-01-30")),timeFormat="%Y-%m-%d")
+
+renderPlot({
+his<-cbind(melt(fdb[,c(3,40,42,62)]), melt(fdb[,c(40,42,4)])[,1])
+colnames(his)[c(1,5)]<- c("run","ferm")
+his$runid<- paste(his$run,his$ferm)
+his<- his[!is.na(his$run),]
+his$date<- as.Date(substr(his$run,3,100),format = "%y%m%d")
+
+his<- subset(his,date >= as.Date(input$date1[1], format = "%Y-%m-%d" ))
+his<- subset(his,date <= as.Date(input$date1[2], format = "%Y-%m-%d" ))
+ggplot(his, aes(reorder(run,value), value))+
+  geom_col(aes(fill= factor(ferm), group =factor(ferm)), position = "dodge")+
+  facet_wrap(~variable, scales = "free", ncol =2)+
+  xlab("")+ylab("Titer g/L")+
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(angle = 90, size = 15),axis.text.y = element_text( size = 15),
+        axis.title = element_text(size =15))
+})
+```
+
+
+## Stoichiometric parameters:
+```{r , echo=FALSE, warning=FALSE, comment=FALSE, message= FALSE,fig.align='center',out.extra='angle=0'}
+
+selectInput("runid",
+                  label ="Select Run ID",
+                  choices = unique(fdb$`Run name`),
+                  selected =  as.character(fdb[nrow(fdb),3]))
+
+renderPlot({
+run<- input$runid
+fdb<-as.data.frame(read_excel("~/Dropbox (Modern Meadow)/Modern Meadow TEAM/LEATHER/Process Development/Upstream/2017 Fermentation/Ferm data analysis/Incyght/inCyght upload folder/inCyght offline .xlsx"))
+colnames(fdb)[c(40,42)]<- c("Pre-Col (g/L)", "Pop-Col (g/L)")
+fdb$date<- as.Date(substr(fdb$`Run name`,3,100), format = "%y%m%d")
+fdb$runid<- paste(fdb$`Run name`,fdb$Ferm)
+pb<- subset(fdb, fdb$`Run name` == run)
+rownames(pb)<- 1:nrow(pb)
+pb.s<- as.data.frame(pb[,c(4,5,7,36,11,12,27:33)]);colnames(pb.s)[2]<- "time"
+pb.k<- as.data.frame(pb[,c(4,5,39,17)]);colnames(pb.k)[2]<- "time"
+
+pb.s.m<- cbind(melt(pb.s[,-1], id.vars = "time"),melt(pb.s[,-2], id.vars = "Ferm")$Ferm);colnames(pb.s.m)[4]<- "Ferm"
+pb.s.m<- subset(pb.s.m, value>= 0 & value <1000)
+ggplot(pb.s.m,aes(time, value))+
+  geom_point(aes(color= factor(Ferm)))+
+  geom_line(aes(color= factor(Ferm)))+
+  facet_wrap(~variable, scales = "free")+
+  xlab("Time(h)")+ylab("")+ theme(legend.title = element_blank(),
+        axis.text.x = element_text(angle = 90, size = 15),axis.text.y = element_text( size = 15),
+        axis.title = element_text(size =15))
+})
+```
+## Kinetic parameters:
+```{r , echo=FALSE, warning=FALSE, comment=FALSE, message= FALSE,fig.align='center',out.extra='angle=0'}
+
+selectInput("runid1",
+                  label ="Select Run ID",
+                  choices = unique(fdb$`Run name`),
+                  selected =  as.character(fdb[nrow(fdb),3]))
+
+renderPlot({
+run<- input$runid1
+fdb<-as.data.frame(read_excel("~/Dropbox (Modern Meadow)/Modern Meadow TEAM/LEATHER/Process Development/Upstream/2017 Fermentation/Ferm data analysis/Incyght/inCyght upload folder/inCyght offline .xlsx"))
+colnames(fdb)[c(40,42)]<- c("Pre-Col (g/L)", "Pop-Col (g/L)")
+fdb$date<- as.Date(substr(fdb$`Run name`,3,100), format = "%y%m%d")
+fdb$runid<- paste(fdb$`Run name`,fdb$Ferm)
+pb<- subset(fdb, fdb$`Run name` == run)
+rownames(pb)<- 1:nrow(pb)
+pb.s<- as.data.frame(pb[,c(4,5,7,36,11,12,27:33)]);colnames(pb.s)[2]<- "time"
+pb.k<- as.data.frame(pb[,c(4,5,39,17)]);colnames(pb.k)[2]<- "time"
+
+pb.k.m<- cbind(melt(pb.k[,-1], id.vars = "time"),melt(pb.k[,-2], id.vars = "Ferm")$Ferm);colnames(pb.k.m)[4]<- "Ferm"
+pb.k.m$value<- as.numeric(pb.k.m$value)
+ggplot(pb.k.m,aes(time, value))+
+  geom_point(aes(color= factor(Ferm)))+
+  geom_line(aes(color= factor(Ferm)))+
+  facet_wrap(~variable, scales = "free")+
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(angle = 90, size = 15),axis.text.y = element_text( size = 15),
+        axis.title = element_text(size =15))
+
+})
+```
+
+## Biomass yield:
+Please use the slider to select a date range:
+
+```{r , echo=FALSE, warning=FALSE, comment=FALSE, message= FALSE,fig.align='center',out.extra='angle=0'}
+
+sliderInput("date2",
+                  "Fermentation range",
+                  min = as.Date("2017-10-17","%Y-%m-%d"),
+                  max = as.Date("2018-01-30","%Y-%m-%d"),
+                  value=as.Date(c("2017-10-17","2018-01-30")),timeFormat="%Y-%m-%d")
+    
+sliderInput("y1",
+                  "Select Fermentations with Yield greater than",
+                  min = 0,
+                  max = 1,
+                  value= 0)
+
+sliderInput("b1",
+                  "Select Fermentations with final WCW concentration greater than",
+                  min = 0,
+                  max = 600,
+                  value= 0)
+
+
+
+
+renderPlot({
+
+  fdb<-as.data.frame(read_excel("~/Dropbox (Modern Meadow)/Modern Meadow TEAM/LEATHER/Process Development/Upstream/2017 Fermentation/Ferm data analysis/Incyght/inCyght upload folder/inCyght offline .xlsx"))
+colnames(fdb)[c(40,42)]<- c("Pre-Col (g/L)", "Pop-Col (g/L)")
+fdb$date<- as.Date(substr(fdb$`Run name`,3,100), format = "%y%m%d")
+fdb$runid<- paste(fdb$`Run name`,fdb$Ferm)
+y<- unique(subset(fdb, fdb$`EFT (hrs)`>62 & fdb$`Yx/C` >= input$y1)$runid)
+b<- unique(subset(fdb, fdb$`EFT (hrs)`>62 & fdb$`WCW (g/L)` >= input$b1)$runid)
+k<- intersect(y,b)
+fdb<-fdb[fdb$runid %in% k,]
+pb<- subset(fdb,date >= as.Date(input$date2[1], format = "%Y-%m-%d" ))
+pb<- subset(pb,date <= as.Date(input$date2[2], format = "%Y-%m-%d" ))
+
+
+rownames(pb)<- 1:nrow(pb)
+pb.s<- as.data.frame(pb[,c(63,5,7,36,11,12,27:33)] );colnames(pb.s)[c(1,2)]<- c("Ferm","time")
+pb.k<- as.data.frame(pb[,c(63,5,39,17)]);colnames(pb.k)[c(1,2)]<- c("Ferm","time")
+
+pb.s.m<- cbind(melt(pb.s[,-1], id.vars = "time"),melt(pb.s[,-2], id.vars = "Ferm")$Ferm);colnames(pb.s.m)[4]<- "Ferm"
+pb.s.m<- subset(pb.s.m, value>= 0 & value <1000)
+ggplot(pb.s.m,aes(time, value))+
+  geom_point(aes(color= factor(Ferm)))+
+  geom_line(aes(color= factor(Ferm)))+
+  facet_wrap(~variable, scales = "free")+
+  xlab("Time(h)")+ylab("")+ theme(legend.title = element_blank(),
+        axis.text.x = element_text(angle = 90, size = 15),axis.text.y = element_text( size = 15),
+        axis.title = element_text(size =15))
+})
+
+
+```
+
+```{r , echo=FALSE, warning=FALSE, comment=FALSE, message= FALSE,fig.align='center',out.extra='angle=0'}
+
+sliderInput("date3",
+                  "Fermentation range",
+                  min = as.Date("2017-10-17","%Y-%m-%d"),
+                  max = as.Date("2018-01-30","%Y-%m-%d"),
+                  value=as.Date(c("2017-10-17","2018-01-30")),timeFormat="%Y-%m-%d")
+    
+
+sliderInput("y2",
+                  "Select Fermentations with Yield greater than",
+                  min = 0,
+                  max = 1,
+                  value= 0)
+
+sliderInput("b2",
+                  "Select Fermentations with final WCW concentration greater than",
+                  min = 0,
+                  max = 600,
+                  value= 0)
+
+
+
+renderPlot({
+  fdb<-as.data.frame(read_excel("~/Dropbox (Modern Meadow)/Modern Meadow TEAM/LEATHER/Process Development/Upstream/2017 Fermentation/Ferm data analysis/Incyght/inCyght upload folder/inCyght offline .xlsx"))
+colnames(fdb)[c(40,42)]<- c("Pre-Col (g/L)", "Pop-Col (g/L)")
+fdb$date<- as.Date(substr(fdb$`Run name`,3,100), format = "%y%m%d")
+fdb<- subset(fdb, fdb$date  <= as.Date(substr(run,3,100), format = "%y%m%d"))
+fdb$runid<- paste(fdb$`Run name`,fdb$Ferm)
+y<- unique(subset(fdb, fdb$`EFT (hrs)`>62 & fdb$`Yx/C` >= input$y2)$runid)
+b<- unique(subset(fdb, fdb$`EFT (hrs)`>62 & fdb$`WCW (g/L)` >= input$b2)$runid)
+k<- intersect(y,b)
+fdb<-fdb[fdb$runid %in% k,]
+pb<- subset(fdb,date >= as.Date(input$date3[1], format = "%Y-%m-%d" ))
+pb<- subset(pb,date <= as.Date(input$date3[2], format = "%Y-%m-%d" ))
+rownames(pb)<- 1:nrow(pb)
+pb.s<- as.data.frame(pb[,c(63,5,7,36,11,12,27:33)]);colnames(pb.s)[c(1,2)]<- c("Ferm","time")
+pb.k<- as.data.frame(pb[,c(63,5,39,17)]);colnames(pb.k)[c(1,2)]<- c("Ferm","time")
+
+
+pb.k.m<- cbind(melt(pb.k[,-1], id.vars = "time"),melt(pb.k[,-2], id.vars = "Ferm")$Ferm);colnames(pb.k.m)[4]<- "Ferm"
+pb.k.m$value<- as.numeric(pb.k.m$value)
+ggplot(pb.k.m,aes(time, value))+
+  geom_point(aes(color= factor(Ferm)))+
+  geom_line(aes(color= factor(Ferm)))+
+  facet_wrap(~variable, scales = "free")+
+  xlab("Time(h)")+ylab("")+ theme(legend.title =element_blank(),
+        axis.text.x = element_text(angle = 90, size = 15),axis.text.y = element_text( size = 15),
+        axis.title = element_text(size =15))
+})
+
+
+```
+
+
+## Process conditions:
+
+```{r , echo=FALSE, warning=FALSE, comment=FALSE, message= FALSE,fig.align='center',out.extra='angle=0'}
+pdb<-as.data.frame(read_excel("~/Dropbox (Modern Meadow)/Modern Meadow TEAM/LEATHER/Process Development/Upstream/2017 Fermentation/Ferm data analysis/Fermentation Process Conditions Database 16JAN18.xlsx", sheet = "Conditions"))
+pdb<- pdb[,1:3]
+
+
+
+renderDataTable({
+  
+   as.data.frame(pdb)
+
+  
+})
+
+ 
+```
